@@ -6,6 +6,7 @@ import org.keycloak.events.admin.AdminEvent;
 import org.keycloak.models.KeycloakSession;
 import org.slf4j.Logger;
 import org.apache.http.auth.UsernamePasswordCredentials;
+import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.entity.StringEntity;
 import org.apache.http.impl.auth.BasicScheme;
@@ -42,7 +43,9 @@ public class WebhookEventListenerProvider implements EventListenerProvider {
       logger.info("Sending webhook for {} type", eventType);
       String webhookUrl = getWebhookUrlForRealm(realmName);
       HttpPost httpPost = prepareHttpPost(webhookUrl, realmName, event);
-      httpClient.execute(httpPost);
+      CloseableHttpResponse response = httpClient.execute(httpPost);
+      logger.info("Webhook response: {}", response.getStatusLine());
+      response.close();
     } catch (Exception e) {
       logger.error("Error while sending webhook for {}: {}", eventType, e.getMessage(), e);
     }

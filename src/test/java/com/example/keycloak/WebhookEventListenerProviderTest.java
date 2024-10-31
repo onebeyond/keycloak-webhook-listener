@@ -1,9 +1,12 @@
 package com.example.keycloak;
 
 import org.apache.commons.io.IOExceptionWithCause;
+import org.apache.http.ProtocolVersion;
 import org.apache.http.client.methods.CloseableHttpResponse;
 import org.apache.http.client.methods.HttpPost;
 import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.message.BasicHttpResponse;
+import org.apache.http.message.BasicStatusLine;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -29,10 +32,11 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 import static uk.org.lidalia.slf4jext.Level.ERROR;
+import static uk.org.lidalia.slf4jext.Level.INFO;
 
 @ExtendWith(MockitoExtension.class)
 @ExtendWith(SystemStubsExtension.class)
-public class WebhookEventListenerProviderTest {
+class WebhookEventListenerProviderTest {
 
   @Mock
   private KeycloakSession session;
@@ -58,7 +62,7 @@ public class WebhookEventListenerProviderTest {
   private TestLogger testLogger = TestLoggerFactory.getTestLogger(WebhookEventListenerProvider.class);
 
   @BeforeEach
-  public void setup() {
+  void setup() {
     TestLoggerFactory.clear();
     testLogger = TestLoggerFactory.getTestLogger(WebhookEventListenerProvider.class);
     provider = new WebhookEventListenerProvider(session, httpClient, testLogger);
@@ -68,7 +72,7 @@ public class WebhookEventListenerProviderTest {
   }
 
   @Test
-  public void testOnEvent_WithBasicAuth() throws Exception {
+  void testOnEvent_WithBasicAuth() throws Exception {
     setupEnvironmentVariablesForBasicAuth();
     Event event = createTestEvent();
     CloseableHttpResponse mockResponse = mock(CloseableHttpResponse.class);
@@ -80,7 +84,7 @@ public class WebhookEventListenerProviderTest {
   }
 
   @Test
-  public void testOnEvent_NoBasicAuth() throws Exception {
+  void testOnEvent_NoBasicAuth() throws Exception {
     setupEnvironmentVariablesForNoAuth();
     Event event = createTestEvent();
     CloseableHttpResponse mockResponse = mock(CloseableHttpResponse.class);
@@ -92,18 +96,11 @@ public class WebhookEventListenerProviderTest {
   }
 
   @Test
-  public void testOnEvent_HttpExecutionFailure() throws Exception {
+  void testOnEvent_HttpExecutionFailure() throws Exception {
     setupEnvironmentVariablesForNoAuth();
     Event event = createTestEvent();
 
     doThrow(new IOExceptionWithCause("Simulated IO Exception", null)).when(httpClient).execute(any(HttpPost.class));
-
-    // Logger rootLogger = (Logger)
-    // LoggerFactory.getLogger(WebhookEventListenerProvider.class);
-    // rootLogger.setLevel(Level.ERROR);
-    // ListAppender<ILoggingEvent> listAppender = new ListAppender<>();
-    // listAppender.start();
-    // rootLogger.addAppender(listAppender);
 
     provider.onEvent(event);
 
@@ -113,7 +110,7 @@ public class WebhookEventListenerProviderTest {
   }
 
   @Test
-  public void testOnEvent_BasicAuthWithoutCredentials() throws Exception {
+  void testOnEvent_BasicAuthWithoutCredentials() throws Exception {
     environmentVariables.set("WEBHOOK_URL_TEST", "http://example.com/webhook");
     environmentVariables.set("WEBHOOK_AUTH_METHOD_TEST", "basic");
     // deliberately not setting USERNAME and PASSWORD
@@ -126,6 +123,52 @@ public class WebhookEventListenerProviderTest {
 
     // Ensure no Authorization header is added
     verifyHttpPostExecution("http://example.com/webhook", "application/json", false);
+  }
+
+  @Test
+  void testOnEvent_BasicAuthWithWrongUsername() throws Exception {
+    setupEnvironmentVariablesForBasicAuth();
+    environmentVariables.set("WEBHOOK_AUTH_METHOD_TEST", "basic");
+    environmentVariables.set("WEBHOOK_BASIC_AUTH_USERNAME_TEST", "wronguser");
+
+    Event event = createTestEvent();
+
+    CloseableHttpResponse unauthorizedResponse = mock(CloseableHttpResponse.class);
+    when(unauthorizedResponse.getStatusLine())
+        .thenReturn(new BasicStatusLine(new ProtocolVersion("HTTP", 1, 1), 401, "Unauthorized"));
+
+    when(httpClient.execute(any(HttpPost.class))).thenReturn(unauthorizedResponse);
+
+    provider.onEvent(event);
+
+    verifyHttpPostExecution("http://example.com/webhook", "application/json", true);
+
+    assertTrue(testLogger.getLoggingEvents().stream()
+        .anyMatch(log -> log.getLevel().equals(INFO) && log.getMessage().contains("Webhook response")
+            && log.getArguments().get(0).toString().contains("401 Unauthorized")));
+  }
+
+  @Test
+  void testOnEvent_BasicAuthWithWrongPassword() throws Exception {
+    setupEnvironmentVariablesForBasicAuth();
+    environmentVariables.set("WEBHOOK_AUTH_METHOD_TEST", "basic");
+    environmentVariables.set("WEBHOOK_BASIC_AUTH_PASSWORD_TEST", "wrongpassword");
+
+    Event event = createTestEvent();
+
+    CloseableHttpResponse unauthorizedResponse = mock(CloseableHttpResponse.class);
+    when(unauthorizedResponse.getStatusLine())
+        .thenReturn(new BasicStatusLine(new ProtocolVersion("HTTP", 1, 1), 401, "Unauthorized"));
+
+    when(httpClient.execute(any(HttpPost.class))).thenReturn(unauthorizedResponse);
+
+    provider.onEvent(event);
+
+    verifyHttpPostExecution("http://example.com/webhook", "application/json", true);
+
+    assertTrue(testLogger.getLoggingEvents().stream()
+        .anyMatch(log -> log.getLevel().equals(INFO) && log.getMessage().contains("Webhook response")
+            && log.getArguments().get(0).toString().contains("401 Unauthorized")));
   }
 
   private void setupEnvironmentVariablesForBasicAuth() {
@@ -155,6 +198,7 @@ public class WebhookEventListenerProviderTest {
     if (expectAuthHeader) {
       assertNotNull(actualPost.getFirstHeader("Authorization"));
     } else {
+      System.err.println("-------------------------------" + actualPost.getFirstHeader("Authorization"));
       assertNull(actualPost.getFirstHeader("Authorization"));
     }
   }
