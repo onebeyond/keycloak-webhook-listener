@@ -198,7 +198,6 @@ class WebhookEventListenerProviderTest {
     if (expectAuthHeader) {
       assertNotNull(actualPost.getFirstHeader("Authorization"));
     } else {
-      System.err.println("-------------------------------" + actualPost.getFirstHeader("Authorization"));
       assertNull(actualPost.getFirstHeader("Authorization"));
     }
   }
