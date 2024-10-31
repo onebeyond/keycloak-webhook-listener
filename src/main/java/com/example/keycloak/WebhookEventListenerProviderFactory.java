@@ -1,18 +1,27 @@
 package com.example.keycloak;
 
-import org.keycloak.models.KeycloakSession;
+import org.apache.http.impl.client.CloseableHttpClient;
+import org.apache.http.impl.client.HttpClients;
 import org.keycloak.events.EventListenerProvider;
 import org.keycloak.events.EventListenerProviderFactory;
-import org.jboss.logging.Logger;
+import org.keycloak.models.KeycloakSession;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 public class WebhookEventListenerProviderFactory implements EventListenerProviderFactory {
 
-  private static final Logger logger = Logger.getLogger(WebhookEventListenerProviderFactory.class);
+  private static final Logger logger = LoggerFactory.getLogger(WebhookEventListenerProviderFactory.class);
+  private static final Logger providerLogger = LoggerFactory.getLogger(WebhookEventListenerProvider.class);
 
   @Override
   public EventListenerProvider create(KeycloakSession session) {
     logger.info("Creating WebhookEventListenerProvider");
-    return new WebhookEventListenerProvider(session);
+
+    // Create or configure the CloseableHttpClient
+    CloseableHttpClient httpClient = HttpClients.createDefault();
+
+    // Pass the httpClient to the provider
+    return new WebhookEventListenerProvider(session, httpClient, providerLogger);
   }
 
   @Override
